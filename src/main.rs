@@ -57,7 +57,9 @@ fn player_move_or_attack(dx: i32, dy: i32, game: &Game, objects: &mut [Object]) 
     let x = objects[PLAYER].x + dx;
     let y = objects[PLAYER].y + dy;
 
-    let target_id = objects.iter().position(|object| object.pos() == (x, y));
+    let target_id = objects
+        .iter()
+        .position(|object| object.fighter.is_some() && object.pos() == (x, y));
 
     match target_id {
         Some(target_id) => {
@@ -142,11 +144,31 @@ impl Tile {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+enum DeathCallback {
+    Player,
+    Monster,
+}
+
+impl DeathCallback {
+    fn callback(self, object: &mut Object) {
+        use DeathCallback::*;
+
+        let callback: fn(&mut Object) = match self {
+            Player => player_death,
+            Monster => monster_death,
+        };
+
+        callback(object);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Fighter {
     max_hp: i32,
     hp: i32,
     defense: i32,
     power: i32,
+    on_death: DeathCallback,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -209,6 +231,23 @@ fn mut_two<T>(first_index: usize, second_index: usize, items: &mut [T]) -> (&mut
     }
 }
 
+fn player_death(player: &mut Object) {
+    println!("You died!");
+
+    player.char = '%';
+    player.color = DARK_RED;
+}
+
+fn monster_death(monster: &mut Object) {
+    println!("{} is dead!", monster.name);
+    monster.char = '%';
+    monster.color = DARK_RED;
+    monster.blocks = false;
+    monster.fighter = None;
+    monster.ai = None;
+    monster.name = format!("remains of {}", monster.name);
+}
+
 impl Object {
     pub fn new(x: i32, y: i32, char: char, name: &str, color: Color, blocks: bool) -> Self {
         Object {
@@ -248,6 +287,13 @@ impl Object {
         if let Some(fighter) = self.fighter.as_mut() {
             if damage > 0 {
                 fighter.hp -= damage;
+            }
+        }
+
+        if let Some(fighter) = self.fighter {
+            if fighter.hp <= 0 {
+                self.alive = false;
+                fighter.on_death.callback(self);
             }
         }
     }
@@ -346,6 +392,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
                 hp: 10,
                 defense: 0,
                 power: 3,
+                on_death: DeathCallback::Monster,
             });
             orc.ai = Some(Ai::Basic);
             orc
@@ -356,6 +403,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
                 hp: 16,
                 defense: 1,
                 power: 4,
+                on_death: DeathCallback::Monster,
             });
             troll.ai = Some(Ai::Basic);
             troll
@@ -448,7 +496,15 @@ fn render_all(tcod: &mut Tcod, game: &mut Game, objects: &[Object], fov_recomput
         }
     }
 
-    for object in objects {
+    let mut to_draw: Vec<_> = objects
+        .iter()
+        .filter(|o| tcod.fov.is_in_fov(o.x, o.y))
+        .collect();
+
+    // sort to prevent drawing inanimate objects over characters
+    to_draw.sort_by(|a, b| a.blocks.cmp(&b.blocks));
+
+    for object in &to_draw {
         if tcod.fov.is_in_fov(object.x, object.y) {
             object.draw(&mut tcod.con);
         }
@@ -500,6 +556,7 @@ fn main() {
         hp: 30,
         defense: 2,
         power: 5,
+        on_death: DeathCallback::Player,
     });
 
     let mut objects = vec![player];
