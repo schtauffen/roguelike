@@ -21,6 +21,8 @@ const LIGHTNING_DAMAGE: i32 = 40;
 const LIGHTNING_RANGE: i32 = 5;
 const CONFUSE_RANGE: i32 = 8;
 const CONFUSE_NUM_TURNS: i32 = 10;
+const FIREBALL_RADIUS: i32 = 3;
+const FIREBALL_DAMAGE: i32 = 12;
 
 const COLOR_DARK_WALL: Color = Color { r: 0, g: 0, b: 100 };
 const COLOR_LIGHT_WALL: Color = Color {
@@ -179,6 +181,45 @@ fn cast_lightning(
     }
 }
 
+fn cast_fireball(
+    _inventory_id: usize,
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &mut [Object],
+) -> UseResult {
+    game.messages.add(
+        "Left-click a target tile for the fireball, or right-click to cancel.",
+        LIGHT_CYAN,
+    );
+    let (x, y) = match target_tile(tcod, game, objects, None) {
+        Some(tile_pos) => tile_pos,
+        None => return UseResult::Cancelled,
+    };
+
+    game.messages.add(
+        format!(
+            "The fireball explodes, burning everything within {} tiles!",
+            FIREBALL_RADIUS
+        ),
+        ORANGE,
+    );
+
+    for obj in objects {
+        if obj.distance(x, y) <= FIREBALL_RADIUS as f32 && obj.fighter.is_some() {
+            game.messages.add(
+                format!(
+                    "The {} gets burned for {} hit points.",
+                    obj.name, FIREBALL_DAMAGE
+                ),
+                ORANGE,
+            );
+            obj.take_damage(FIREBALL_DAMAGE, game);
+        }
+    }
+
+    UseResult::UsedUp
+}
+
 fn cast_confuse(
     _inventory_id: usize,
     tcod: &mut Tcod,
@@ -214,6 +255,7 @@ fn use_item(inventory_id: usize, tcod: &mut Tcod, game: &mut Game, objects: &mut
             Heal => cast_heal,
             Lightning => cast_lightning,
             Confuse => cast_confuse,
+            Fireball => cast_fireball,
         };
         match on_use(inventory_id, tcod, game, objects) {
             UseResult::UsedUp => {
@@ -382,6 +424,7 @@ enum Item {
     Heal,
     Lightning,
     Confuse,
+    Fireball,
 }
 
 fn move_by(id: usize, dx: i32, dy: i32, map: &Map, objects: &mut [Object]) {
@@ -506,6 +549,36 @@ fn pick_item_up(object_id: usize, game: &mut Game, objects: &mut Vec<Object>) {
     }
 }
 
+fn target_tile(
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &[Object],
+    max_range: Option<f32>,
+) -> Option<(i32, i32)> {
+    loop {
+        tcod.root.flush();
+        let event = input::check_for_event(input::KEY_PRESS | input::MOUSE).map(|e| e.1);
+        match event {
+            Some(Event::Mouse(m)) => tcod.mouse = m,
+            Some(Event::Key(k)) => tcod.key = k,
+            None => tcod.key = Default::default(),
+        }
+        render_all(tcod, game, objects, false);
+
+        let (x, y) = (tcod.mouse.cx as i32, tcod.mouse.cy as i32);
+
+        let in_fov = x < MAP_WIDTH && y < MAP_HEIGHT && tcod.fov.is_in_fov(x, y);
+        let in_range = max_range.map_or(true, |range| objects[PLAYER].distance(x, y) <= range);
+        if tcod.mouse.lbutton_pressed && in_fov && in_range {
+            return Some((x, y));
+        }
+
+        if tcod.mouse.rbutton_pressed || tcod.key.code == Escape {
+            return None;
+        }
+    }
+}
+
 impl Object {
     pub fn new(x: i32, y: i32, char: char, name: &str, color: Color, blocks: bool) -> Self {
         Object {
@@ -534,6 +607,10 @@ impl Object {
     pub fn set_pos(&mut self, x: i32, y: i32) {
         self.x = x;
         self.y = y;
+    }
+
+    pub fn distance(&self, x: i32, y: i32) -> f32 {
+        (((x - self.x).pow(2) + (y - self.y).pow(2)) as f32).sqrt()
     }
 
     pub fn distance_to(&self, other: &Object) -> f32 {
@@ -701,6 +778,10 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
             } else if dice < 0.7 + 0.1 {
                 let mut object = Object::new(x, y, '#', "scroll of lightning", LIGHT_YELLOW, false);
                 object.item = Some(Item::Lightning);
+                object
+            } else if dice < 0.7 + 0.1 + 0.1 {
+                let mut object = Object::new(x, y, '#', "scroll of fire", LIGHT_YELLOW, false);
+                object.item = Some(Item::Fireball);
                 object
             } else {
                 let mut object = Object::new(x, y, '#', "scroll of confusion", LIGHT_YELLOW, false);
