@@ -246,8 +246,6 @@ fn cast_confuse(
         );
         UseResult::UsedUp
     } else {
-        game.messages
-            .add("No enemy is close enough to strike.", RED);
         UseResult::Cancelled
     }
 }
@@ -339,6 +337,19 @@ fn handle_keys(tcod: &mut Tcod, game: &mut Game, objects: &mut Vec<Object>) -> P
             );
             if let Some(inventory_index) = inventory_index {
                 use_item(inventory_index, tcod, game, objects);
+            }
+            DidntTakeTurn
+        }
+
+        // show inventory for dropping
+        (Key { code: Text, .. }, "d", true) => {
+            let inventory_index = inventory_menu(
+                &game.inventory,
+                "Press the key next to an item to drop it, or any other to cancel.\n",
+                &mut tcod.root,
+            );
+            if let Some(inventory_index) = inventory_index {
+                drop_item(inventory_index, game, objects);
             }
             DidntTakeTurn
         }
@@ -551,6 +562,14 @@ fn pick_item_up(object_id: usize, game: &mut Game, objects: &mut Vec<Object>) {
             .add(format!("You picked up a {}!", item.name), GREEN);
         game.inventory.push(item);
     }
+}
+
+fn drop_item(inventory_id: usize, game: &mut Game, objects: &mut Vec<Object>) {
+    let mut item = game.inventory.remove(inventory_id);
+    item.set_pos(objects[PLAYER].x, objects[PLAYER].y);
+    game.messages
+        .add(format!("You dropped a {}.", item.name), YELLOW);
+    objects.push(item);
 }
 
 fn target_tile(
