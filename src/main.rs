@@ -226,7 +226,11 @@ fn cast_confuse(
     game: &mut Game,
     objects: &mut [Object],
 ) -> UseResult {
-    let monster_id = closest_monster(tcod, objects, CONFUSE_RANGE);
+    game.messages.add(
+        "Left-click an enemy to confuse it, or right-click to cancel.",
+        LIGHT_CYAN,
+    );
+    let monster_id = target_monster(tcod, game, objects, Some(CONFUSE_RANGE as f32));
     if let Some(monster_id) = monster_id {
         let old_ai = objects[monster_id].ai.take().unwrap_or(Ai::Basic);
         objects[monster_id].ai = Some(Ai::Confused {
@@ -575,6 +579,26 @@ fn target_tile(
 
         if tcod.mouse.rbutton_pressed || tcod.key.code == Escape {
             return None;
+        }
+    }
+}
+
+fn target_monster(
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &[Object],
+    max_range: Option<f32>,
+) -> Option<usize> {
+    loop {
+        match target_tile(tcod, game, objects, max_range) {
+            Some((x, y)) => {
+                for (id, obj) in objects.iter().enumerate() {
+                    if obj.pos() == (x, y) && obj.fighter.is_some() && id != PLAYER {
+                        return Some(id);
+                    }
+                }
+            }
+            None => return None,
         }
     }
 }
