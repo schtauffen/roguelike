@@ -846,7 +846,11 @@ where
     );
 
     // calculate total height for the header (after auto-wrap) and one line per option
-    let header_height = root.get_height_rect(0, 0, width, SCREEN_HEIGHT, header);
+    let header_height = if header.is_empty() {
+        0
+    } else {
+        root.get_height_rect(0, 0, width, SCREEN_HEIGHT, header)
+    };
     let height = options.len() as i32 + header_height;
 
     // create off-screen console
@@ -1158,6 +1162,8 @@ fn initialize_fov(tcod: &mut Tcod, map: &Map) {
             )
         }
     }
+
+    tcod.con.clear();
 }
 
 fn new_game(tcod: &mut Tcod) -> (Game, Vec<Object>) {
@@ -1188,6 +1194,46 @@ fn new_game(tcod: &mut Tcod) -> (Game, Vec<Object>) {
     (game, objects)
 }
 
+fn main_menu(tcod: &mut Tcod) {
+    let img =
+        tcod::image::Image::from_file("menu_background.png").expect("Background image not found");
+
+    while !tcod.root.window_closed() {
+        tcod::image::blit_2x(&img, (0, 0), (-1, -1), &mut tcod.root, (0, 0));
+
+        tcod.root.set_default_foreground(LIGHT_YELLOW);
+        tcod.root.print_ex(
+            SCREEN_WIDTH / 2,
+            SCREEN_HEIGHT / 2 - 4,
+            BackgroundFlag::None,
+            TextAlignment::Center,
+            "TOMBS OF THE ANCIENT KINGS",
+        );
+        tcod.root.print_ex(
+            SCREEN_WIDTH / 2,
+            SCREEN_HEIGHT - 2,
+            BackgroundFlag::None,
+            TextAlignment::Center,
+            "By Yours Truly",
+        );
+
+        // show options and wait for the player's choice
+        let choices = &["Play a new game", "Continue last game", "Quit"];
+        let choice = menu("", choices, 24, &mut tcod.root);
+
+        match choice {
+            Some(0) => {
+                let (mut game, mut objects) = new_game(tcod);
+                play_game(tcod, &mut game, &mut objects);
+            }
+            Some(2) => {
+                break;
+            }
+            _ => {}
+        }
+    }
+}
+
 fn main() {
     tcod::system::set_fps(FPS_MAX);
 
@@ -1207,6 +1253,5 @@ fn main() {
         mouse: Default::default(),
     };
 
-    let (mut game, mut objects) = new_game(&mut tcod);
-    play_game(&mut tcod, &mut game, &mut objects);
+    main_menu(&mut tcod);
 }
