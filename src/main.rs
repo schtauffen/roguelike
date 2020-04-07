@@ -1113,6 +1113,81 @@ fn render_all(tcod: &mut Tcod, game: &mut Game, objects: &[Object], fov_recomput
     );
 }
 
+fn play_game(tcod: &mut Tcod, game: &mut Game, objects: &mut Vec<Object>) {
+    // force FOV "recompute" first time through the game loop
+    let mut previous_player_position = (-1, -1);
+
+    while !tcod.root.window_closed() {
+        tcod.con.clear();
+
+        match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
+            Some((_, Event::Mouse(m))) => tcod.mouse = m,
+            Some((_, Event::Key(k))) => tcod.key = k,
+            _ => tcod.key = Default::default(),
+        }
+
+        let fov_recompute = previous_player_position != (objects[PLAYER].x, objects[PLAYER].y);
+        render_all(tcod, game, &objects, fov_recompute);
+
+        tcod.root.flush();
+
+        previous_player_position = objects[PLAYER].pos();
+        let player_action = handle_keys(tcod, game, objects);
+        if player_action == PlayerAction::Exit {
+            break;
+        }
+
+        if objects[PLAYER].alive && player_action != PlayerAction::DidntTakeTurn {
+            for id in 0..objects.len() {
+                if objects[id].ai.is_some() {
+                    ai_take_turn(id, tcod, game, objects);
+                }
+            }
+        }
+    }
+}
+
+fn initialize_fov(tcod: &mut Tcod, map: &Map) {
+    for y in 0..MAP_HEIGHT {
+        for x in 0..MAP_WIDTH {
+            tcod.fov.set(
+                x,
+                y,
+                !map[x as usize][y as usize].block_sight,
+                !map[x as usize][y as usize].blocked,
+            )
+        }
+    }
+}
+
+fn new_game(tcod: &mut Tcod) -> (Game, Vec<Object>) {
+    let mut player = Object::new(0, 0, '@', "player", WHITE, true);
+    player.alive = true;
+    player.fighter = Some(Fighter {
+        max_hp: 30,
+        hp: 30,
+        defense: 2,
+        power: 5,
+        on_death: DeathCallback::Player,
+    });
+
+    let mut objects = vec![player];
+    let mut game = Game {
+        map: make_map(&mut objects),
+        messages: Messages::new(),
+        inventory: vec![],
+    };
+
+    initialize_fov(tcod, &game.map);
+
+    game.messages.add(
+        "Welcome stranger! Prepare to perish in the Tombs of the Ancient Kings.",
+        RED,
+    );
+
+    (game, objects)
+}
+
 fn main() {
     tcod::system::set_fps(FPS_MAX);
 
@@ -1132,65 +1207,6 @@ fn main() {
         mouse: Default::default(),
     };
 
-    let mut player = Object::new(0, 0, '@', "player", WHITE, true);
-    player.alive = true;
-    player.fighter = Some(Fighter {
-        max_hp: 30,
-        hp: 30,
-        defense: 2,
-        power: 5,
-        on_death: DeathCallback::Player,
-    });
-
-    let mut objects = vec![player];
-    let mut game = Game {
-        map: make_map(&mut objects),
-        messages: Messages::new(),
-        inventory: vec![],
-    };
-
-    for y in 0..MAP_HEIGHT {
-        for x in 0..MAP_WIDTH {
-            tcod.fov.set(
-                x,
-                y,
-                !game.map[x as usize][y as usize].block_sight,
-                !game.map[x as usize][y as usize].blocked,
-            )
-        }
-    }
-
-    // force FOV "recompute" first time through the game loop
-    let mut previous_player_position = (-1, -1);
-    game.messages.add(
-        "Welcome stranger! Prepare to perish in the Tombs of the Ancient Kings.",
-        RED,
-    );
-
-    while !tcod.root.window_closed() {
-        match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
-            Some((_, Event::Mouse(m))) => tcod.mouse = m,
-            Some((_, Event::Key(k))) => tcod.key = k,
-            _ => tcod.key = Default::default(),
-        }
-
-        tcod.con.clear();
-        let fov_recompute = previous_player_position != (objects[PLAYER].x, objects[PLAYER].y);
-        render_all(&mut tcod, &mut game, &objects, fov_recompute);
-        tcod.root.flush();
-
-        previous_player_position = objects[PLAYER].pos();
-        let player_action = handle_keys(&mut tcod, &mut game, &mut objects);
-        if player_action == PlayerAction::Exit {
-            break;
-        }
-
-        if objects[PLAYER].alive && player_action != PlayerAction::DidntTakeTurn {
-            for id in 0..objects.len() {
-                if objects[id].ai.is_some() {
-                    ai_take_turn(id, &tcod, &mut game, &mut objects);
-                }
-            }
-        }
-    }
+    let (mut game, mut objects) = new_game(&mut tcod);
+    play_game(&mut tcod, &mut game, &mut objects);
 }
